@@ -30,11 +30,27 @@ The separate build command fetches two fixed official EU membership listing page
 
 The default public tool returns the full EU list. Optional projection returns matches and supporting passages for requested country names. Both use the same validated catalog. SQL results have a timeout, a row cap, and explicit string/row truncation indicators; the agent must narrow or aggregate a query if the preview is insufficient.
 
-## 4. Freshness and fallback
+## 4. Freshness, monitor signals and refresh
 
-Every public catalog read checks its age. A future-dated or expired catalog returns `stale` with a refresh instruction, rather than presenting old membership as current. Refresh is an explicit build command, not an automatic paid request inside the MCP server.
+The resolver first validates the requested fact scope. If an existing Telem monitor
+is configured, it polls that monitor's replayable change stream before cache use.
+Semantic events advance a durable invalidation generation; a run-only event does
+not. Poll failures return unresolved. The older catalog tools are hidden in monitor
+mode so the agent cannot skip this gate.
 
-The server has no automatic web-search fallback. If a question needs an uncovered fact, historical membership, or an unresolved country alias, the agent must use an independently configured search tool or report that it cannot verify the fact. A missing name is not proof of non-membership. Callers must not silently treat stale or out-of-scope evidence as an answer.
+A cache hit requires complete evidence within the requested age limit and, in
+monitor mode, the current monitor generation. TTL is capped at 24 hours and remains
+a backup for missed monitor signals. A timestamp does not establish factual truth.
+
+With automatic refresh enabled, missing, expired or invalidated evidence triggers
+one constrained Telem search and two fixed official page fetches. Optional Telem
+accuracy routing selects within a bounded provider allowlist. Discovery rankings
+are audit metadata, not adaptive fetch selection. Validation precedes atomic save;
+failed refreshes remain unresolved rather than serving stale facts as current.
+
+Historical questions, unsupported predicates and unresolved country aliases remain
+out of scope. See [architecture](docs/architecture.md) for the complete diagram and
+[monitor integration](docs/monitor-invalidation.md) for setup and verification.
 
 ## What is reused
 
@@ -48,12 +64,13 @@ We reuse business definitions and a sourced public fact dimension across differe
 - The agent can still write incorrect SQL or misuse evidence.
 - The recorded pilot improvements are a small historical result, not a guarantee. See `docs/results.md` for selection, regressions and measurement boundaries.
 
-## Opt-in automatic evidence refresh
+## Opt-in configuration
 
-`resolve_external_fact` now checks scoped current EU evidence and can rebuild it
-when missing or stale. With `--auto-refresh-evidence`, one constrained Telem search
-must find the supported official listing, then two bounded page fetches supply the
-complete source set. Validation precedes atomic publication; failures remain
-unresolved. Related requests reuse the validated facts, not prior SQL or answers.
-See [implementation and live smoke](docs/evidence-refresh.md). Automatic provider
-routing and general fact extraction remain future work.
+`--auto-refresh-evidence` enables paid refresh inside the resolver. Optional
+`--auto-routing accuracy` lets Telem choose within `--search-provider`'s allowlist.
+Optional `--telem-monitor-id` adds authenticated polling of an existing reviewed
+monitor before cache reuse. It requires automatic refresh and a catalog path; it
+does not create recurring monitors or expose a public webhook.
+
+Monitor-mode latency and costs are separate from the earlier monitor-disabled
+benchmark. See [results](docs/resolver-results.md) for measurement boundaries.

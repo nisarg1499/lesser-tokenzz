@@ -9,6 +9,7 @@ import threading
 import time
 
 from .discovery_audit import discovery_audit
+from .monitor_invalidation import catalog_lock
 
 from .eu_catalog import (
     EU_URL,
@@ -37,9 +38,12 @@ QUERY = "current European Union EU countries complete member states official lis
 class EvidenceResolver:
     """One process-local single-flight resolver. Disk files are trusted operator state."""
 
-    def __init__(self, path, provider, *, refresh_enabled=False, now=None):
+    def __init__(
+        self, path, provider, *, refresh_enabled=False, now=None, monitor=None
+    ):
         self.path, self.provider = Path(path), provider
         self.refresh_enabled = refresh_enabled
+        self.monitor = monitor
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.lock = threading.Lock()
 
@@ -115,8 +119,21 @@ class EvidenceResolver:
         started = time.perf_counter()
         calls = 0
         provider_runs = 0
-        with self.lock:
+        with self.lock, catalog_lock(self.path):
+            monitor_state = None
+            if self.monitor:
+                try:
+                    monitor_state = self.monitor.poll()
+                except Exception:
+                    return {"status": "unresolved", "reason": "monitor_unavailable"}
             data = self._load(max_age_hours)
+            if (
+                monitor_state
+                and data
+                and data.get("monitor_generation")
+                != {k: monitor_state[k] for k in ("monitor_id", "generation")}
+            ):
+                data = None
             state = "fresh_hit"
             if data is None:
                 if not self.refresh_enabled:
@@ -127,11 +144,15 @@ class EvidenceResolver:
                     discovery = self.provider.search(
                         QUERY, limit=3, include_domains=["european-union.europa.eu"]
                     )
-                    provider_runs += len(discovery.usage["response"].get("preprocessor_runs", []))
+                    provider_runs += len(
+                        discovery.usage["response"].get("preprocessor_runs", [])
+                    )
                     # The parser supports this source family only. Other official pages
                     # are not automatically interchangeable evidence.
                     selection = discovery_audit(discovery, SOURCES)
-                    if not any(row["url"] == EU_URL for row in selection["selected_sources"]):
+                    if not any(
+                        row["url"] == EU_URL for row in selection["selected_sources"]
+                    ):
                         raise ValueError("supported_source_not_discovered")
                     responses = []
                     for url in SOURCES:
@@ -162,6 +183,10 @@ class EvidenceResolver:
                         "provider_runs": provider_runs,
                         **selection,
                     }
+                    if monitor_state:
+                        data["monitor_generation"] = {
+                            k: monitor_state[k] for k in ("monitor_id", "generation")
+                        }
                     self._save(data)
                 except Exception:
                     # No provider payload or exception text may leak credentials.
@@ -178,6 +203,7 @@ class EvidenceResolver:
             return {
                 "status": "resolved",
                 "cache_state": state,
+                "monitor": monitor_state,
                 "predicate": predicate,
                 "facts": [
                     {
@@ -200,7 +226,9 @@ class EvidenceResolver:
                 "provider_metadata_incomplete": any(
                     source.get("metadata_limitations") for source in data["sources"]
                 ),
-                "discovery": data.get("discovery", {}) if state == "refreshed" else None,
+                "discovery": (
+                    data.get("discovery", {}) if state == "refreshed" else None
+                ),
                 "revision": revision,
                 "max_age_hours": max_age_hours,
                 "provider_calls": calls,

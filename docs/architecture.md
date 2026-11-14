@@ -1,37 +1,120 @@
-# How it works
+# Architecture
 
-1. The database catalog tells the agent what fields and business metrics mean. It includes units, dependencies, source fingerprints, and the population over which ranks must be calculated.
-2. The Telem builder fetches both pages of an official EU member list. Deterministic parsing checks the page set and member count before saving a catalog.
-3. A follow-up question reuses that catalog, then queries the business database live. No extra model summarizes each cache hit.
+Codex plans the work and writes SQL. The MCP supplies reviewed business definitions,
+live read-only database access, and reusable public evidence. There is no hidden
+manager LLM and no cache of final answers.
 
-This is structured fact reuse, not embedding similarity matching or a cache of final answers. Related questions can reuse the same membership dimension even if their SQL, grouping, filters and outputs differ.
+## Complete request path
 
-## Code map
+```mermaid
+flowchart TD
+    U[Business question] --> A[Codex: plan and write SQL]
+    A --> B[get_metric_contracts]
+    B --> BC[(Reviewed business definitions and schema)]
+    BC --> A
+    A --> Q[run_sql: bounded read-only execution]
+    Q --> DB[(Live business database)]
+    DB --> A
+    A --> R[resolve_external_fact: supported EU request]
+    R --> L[Acquire local catalog lock]
+    L --> M{Monitor configured?}
+    M -- No --> C{Complete catalog within TTL?}
+    M -- Yes --> P[Authenticated poll of configured Telem monitor]
+    P --> V{Valid binding and readable change stream?}
+    V -- No --> X[Unresolved: do not serve cached evidence]
+    V -- Yes --> G[Persist cursor and invalidation generation]
+    G --> C
+    C -- Fresh and generation matches --> H[Project requested facts and citations]
+    C -- Missing, expired, or invalidated --> S[Telem Search: bounded provider policy]
+    S --> RT[Optional Telem accuracy provider routing]
+    RT --> D[Reviewed-source discovery audit]
+    D --> F[Telem Fetch: two fixed official EU pages]
+    F --> E{Complete and valid evidence?}
+    E -- No --> X
+    E -- Yes --> W[Atomically save catalog with monitor generation]
+    W --> H
+    H --> A
+    X --> A
+    A --> O[Answer using live data and source-backed facts]
+    TM[Telem scheduled monitor] --> CS[(Telem change stream)]
+    CS --> P
+```
 
-| Module | Responsibility |
+The diagram shows the optional monitor path. Without a configured monitor, TTL is
+the freshness gate. With a monitor, each supported resolver request polls it before
+reading cached evidence. This is **poll-on-access**, not an incoming webhook or a
+background worker inside the MCP.
+
+## What happens in each component
+
+1. **Business catalog:** returns formulas, units, dependencies and population rules.
+   It does not fetch business rows or prove that the agent's SQL follows those rules.
+2. **Database tool:** executes agent-authored read-only SQLite SQL with a timeout,
+   bounded rows and explicit truncation. Business data remains live.
+3. **Evidence resolver:** accepts current EU membership and reviewed country names.
+   A valid warm entry returns only requested facts, passages and provenance.
+4. **Telem retrieval:** refresh uses a public query and fixed official source family.
+   Optional accuracy routing lets Telem select within the provider allowlist.
+   Candidate RRF is audit metadata; it does not choose which pages are fetched.
+5. **Validation and persistence:** both complete official listing pages and the
+   reviewed 27-member set are required. Valid evidence is saved atomically, with a
+   revision hash and retrieval time. A changed member set requires review.
+6. **Monitor invalidation:** a configured monitor supplies a change signal, not new
+   fact evidence. Relevant stream events advance a durable generation. Evidence
+   saved under an older generation is unusable until refreshed and validated.
+
+## Monitor state and failure handling
+
+```mermaid
+stateDiagram-v2
+    [*] --> Unbound
+    Unbound --> NeedsRefresh: First valid monitor poll
+    Current --> NeedsRefresh: New semantic event or TTL expiry
+    Current --> Current: Successful poll with no new semantic event
+    NeedsRefresh --> Current: Official-source refresh validates and saves generation
+    NeedsRefresh --> Unresolved: Refresh or validation fails
+    Current --> Unresolved: Monitor poll fails
+    Unresolved --> NeedsRefresh: Next poll succeeds but evidence is expired or invalidated
+    Unresolved --> Current: Next poll succeeds and evidence remains valid
+```
+
+The local `.monitor.json` sidecar stores monitor ID, cursor and generation. Cursor
+updates are persisted before refresh. Replayed old events do not invalidate again.
+A shared file lock serializes polling and refresh among cooperating local server
+processes. This is not a distributed lock across independent hosts or filesystems.
+
+Monitor mode hides the legacy full-list and projection tools so an agent cannot
+bypass the monitor gate. An inactive or mismatched monitor, malformed stream,
+excessive backlog, or polling outage returns `unresolved`. It does not fall back to
+serving a cached fact merely because its TTL has not expired.
+
+## Trust boundaries and limits
+
+- Telem receives the fixed public query and official URLs, not private business rows
+  or the user's full question. Credentials come from the environment and are not logged.
+- Monitor requests authenticate to an approved Telem origin. No public webhook
+  endpoint is exposed in this implementation.
+- TTL remains a backup when a monitor misses a change. A monitor notification is
+  not proof a fact changed, and an absence of notifications is not proof it did not.
+- Detection is delayed by the monitor schedule and polling. A change can occur
+  after a poll. Neither this feature nor a fresh retrieval guarantees zero stale data.
+- Current external-fact coverage is EU membership only. The cache is trusted local
+  operator state, not a tenant-isolated enterprise store.
+- Monitor polling adds API calls even on warm hits. Earlier zero-call warm results
+  measured monitor-disabled operation; do not reuse them as monitor-mode results.
+
+## Implementation map
+
+| Module | Role |
 | --- | --- |
-| `server.py` | MCP tools and command-line configuration |
-| `metric_contract.py` | Reviewed metric expressions, dependencies and original news adapter |
-| `metric_executor.py` | Tested structured metric execution helper |
-| `metric_executor_compact.py` | Schema-aware compact catalog and optional query inspection helper |
-| `sql.py` | Agent-authored read-only SQL with bounded output |
-| `telem_provider.py` | Explicit provider selection, authenticated search/fetch, timing and raw provider metadata |
-| `search_provider.py` | Provider-neutral response types |
-| `eu_catalog.py` | Complete-list parsing, source hashes and 24-hour expiry |
-| `catalog_projection.py` | Optional relevant-country evidence projection |
-| `build_catalog.py` | Explicit, paid catalog refresh command |
+| `server.py` | MCP tools and opt-in configuration |
+| `metric_contract.py` | Reviewed metric definitions and original-source checks |
+| `sql.py` | Read-only SQL execution and result limits |
+| `evidence_resolver.py` | Freshness, refresh, validation and evidence projection |
+| `monitor_invalidation.py` | Authenticated polling, durable cursor/generation, local file lock |
+| `telem_provider.py` | Bounded Telem search/fetch and optional provider routing |
+| `discovery_audit.py` | Candidate deduplication, provenance and audit-only RRF |
+| `eu_catalog.py` | Official-page parsing, source hashes and TTL |
 
-The server uses the metric helpers to describe definitions; it does not expose their compiler as a tool. The agent remains responsible for translating those definitions into correct SQL. This preserves the distinction between providing business context and mechanically enforcing it.
-
-## Trust boundaries
-
-- SQLite opens read-only. The SQL authorizer blocks writes, ATTACH, PRAGMA changes and file/extension functions. Execution has a 10-second progress deadline; row and string previews report truncation.
-- Only public official page URLs are sent by the catalog builder. Business rows stay local.
-- Credentials come from the environment. The adapter accepts only known Telem base URLs and does not log keys.
-- EU evidence has a 24-hour TTL. A stale catalog is not served as current. The parser is intentionally specific to the two official listing pages and fails when the expected shape changes.
-- Name projection is case-insensitive exact matching, not entity resolution. An unmatched alias does not prove non-membership.
-- The original news adapter pins five reviewed knowledge records and schema fingerprints. Generic JSON contracts are operator-reviewed inputs, not automatically verified business truth.
-
-## Deliberate omissions
-
-No experiment orchestration maze, old candidate approaches, secrets, full benchmark data, raw model traces, or claims of a universal semantic cache. Add a new source adapter only when a concrete use case needs it.
+See [monitor setup and verification](monitor-invalidation.md),
+[measured resolver results](resolver-results.md), and [routing guide](telem-routing.md).

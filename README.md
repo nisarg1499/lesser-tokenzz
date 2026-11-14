@@ -50,3 +50,13 @@ max_age_hours=24)` to discover and refresh missing or expired evidence through
 Telem. Calls can incur charges. Without that flag, missing evidence is unresolved.
 Only reviewed canonical country names and current EU membership are supported.
 See [refresh implementation](docs/evidence-refresh.md) for limits and smoke results.
+
+### Monitor-driven invalidation (opt-in)
+
+With an existing reviewed Telem monitor, add `--telem-monitor-id MONITOR_ID`
+alongside `--eu-catalog` and `--auto-refresh-evidence`. The resolver polls before
+cache use, invalidates on change signals, and refreshes before returning facts.
+Polling failures remain unresolved; TTL is retained. This does not create a paid
+monitor or guarantee immediate detection of every source change.
+See [setup and verification status](docs/monitor-invalidation.md) and the
+[complete architecture diagram](docs/architecture.md).

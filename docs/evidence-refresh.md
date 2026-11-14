@@ -8,23 +8,29 @@ embedding similarity. The normal SQL and metric interfaces are unchanged.
 
 1. Reject unsupported predicates, noncanonical country names, historical dates,
    or a requested maximum age above the configured 24-hour policy.
+   If monitor mode is configured, poll and validate its change stream before
+   cache use; generation mismatch also requires refresh. See
+   [monitor integration](monitor-invalidation.md).
 2. Reuse a complete validated local catalog. No external calls on a covered hit.
 3. If refresh is enabled, send one fixed public query to Telem, constrained to
-   `european-union.europa.eu`, with at most three results from one configured provider.
+   `european-union.europa.eu`, with bounded results and an explicit provider allowlist. Optional Telem
+   accuracy routing selects providers within that allowlist.
 4. Require discovery of the supported official listing. Fetch its two known
    pagination URLs using one configured provider. Each request times out after
-   20 seconds; at most three provider requests occur per resolution.
+   20 seconds; the resolver makes one search request and two fetch requests. A search
+   request can involve multiple provider runs; monitor polling adds separate reads.
 5. Reject incomplete, conflicting-count, unexpected-membership, future-dated,
    unsupported-source or truncated evidence. The reviewed membership set is an
    explicit change-review guard, not a substitute for fetched source evidence.
 6. Retain the previous file by revision hash and replace the current file atomically.
-   Failed refreshes do not serve old evidence as current. A process-local lock
-   avoids duplicate successful refreshes within one server process.
+   Failed refreshes do not serve old evidence as current. A process lock and shared local file lock serialize refreshes among
+   cooperating local server processes.
 7. Return requested facts, passages, URLs, retrieval times, hashes and revision.
    No full provider response or private database row enters the answer context.
 
 This source policy selects a single supported official source family; it is **not**
-a general ranking engine. Accuracy auto-routing remains disabled and untested.
+a general ranking engine. Accuracy auto-routing is opt-in; see [routing validation](telem-routing.md).
+The candidate RRF trace is audit-only and does not choose the mandatory pages.
 Provider redirect behavior cannot independently be inspected; returned canonical
 URLs are validated, but this is not a complete provider-side SSRF audit.
 

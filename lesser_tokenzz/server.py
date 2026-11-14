@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 from .catalog_projection import lookup_membership
 from .eu_catalog import read_catalog
 from .evidence_resolver import EvidenceResolver
+from .monitor_invalidation import MonitorInvalidation, TelemMonitorClient
 from .telem_provider import TelemProvider
 from .metric_contract import MetricContracts, news_contracts
 from .metric_executor import MetricExecutor
@@ -31,12 +32,26 @@ def main():
         "--news-knowledge", type=Path, help="Original approved news KB JSONL"
     )
     parser.add_argument("--eu-catalog", type=Path)
+    parser.add_argument(
+        "--telem-monitor-id",
+        help="Existing reviewed monitor; polls before each evidence read",
+    )
     parser.add_argument("--projected-catalog", action="store_true")
     parser.add_argument("--auto-refresh-evidence", action="store_true")
-    parser.add_argument("--search-provider", default="brave", help="Comma-separated bounded provider allowlist")
-    parser.add_argument("--auto-routing", choices=["accuracy"], help="Opt-in Telem provider routing within the allowlist")
+    parser.add_argument(
+        "--search-provider",
+        default="brave",
+        help="Comma-separated bounded provider allowlist",
+    )
+    parser.add_argument(
+        "--auto-routing",
+        choices=["accuracy"],
+        help="Opt-in Telem provider routing within the allowlist",
+    )
     parser.add_argument("--fetch-provider", default="tavily")
     args = parser.parse_args()
+    if args.telem_monitor_id and not (args.eu_catalog and args.auto_refresh_evidence):
+        parser.error("--telem-monitor-id requires catalog and auto-refresh")
     if args.auto_refresh_evidence and not args.eu_catalog:
         parser.error("--auto-refresh-evidence requires --eu-catalog")
     if args.projected_catalog and not args.eu_catalog:
@@ -79,6 +94,14 @@ def main():
                 timeout_s=20,
             ),
             refresh_enabled=args.auto_refresh_evidence,
+            monitor=(
+                MonitorInvalidation(
+                    str(args.eu_catalog) + ".monitor.json",
+                    TelemMonitorClient(args.telem_monitor_id),
+                )
+                if args.telem_monitor_id
+                else None
+            ),
         )
 
         @mcp.tool(
@@ -98,14 +121,14 @@ def main():
             """Resolve current EU membership with compact citations; optional paid refresh on stale/missing evidence. Only canonical public country names; no private business text."""
             return resolver.resolve(subjects, predicate, as_of, max_age_hours)
 
-        if args.projected_catalog:
+        if args.projected_catalog and not args.telem_monitor_id:
 
             @mcp.tool(annotations=readonly)
             def lookup_eu_membership(countries: list[str]) -> dict:
                 """Return relevant EU membership evidence. Unmatched aliases are not negatives."""
                 return lookup_membership(args.eu_catalog, countries)
 
-        else:
+        elif not args.telem_monitor_id:
 
             @mcp.tool(annotations=readonly)
             def get_eu_membership_catalog() -> dict:
