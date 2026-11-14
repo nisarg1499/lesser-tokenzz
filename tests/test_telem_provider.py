@@ -71,6 +71,32 @@ class Tests(unittest.TestCase):
         self.assertEqual(r.usage["measurement"], "mock")
         self.assertIsNone(r.cost_usd)
 
+    def test_fetch_many_limits(self):
+        provider = self.make(transport=lambda *_: self.fail("must not send request"))
+        for urls in (
+            [],
+            ["https://example.com"] * 2,
+            ["https://e.com/" + str(i) for i in range(6)],
+            ["file:///tmp/x"],
+            ["https://user:password@example.com"],
+            [None],
+        ):
+            with self.subTest(urls=urls), self.assertRaises(ValueError):
+                provider.fetch_many(urls)
+
+    def test_fetch_many_one_request(self):
+        calls = []
+
+        def transport(path, payload):
+            calls.append((path, payload))
+            return {"preprocessor_runs": []}
+
+        urls = ["https://example.com/a", "https://example.com/b"]
+        self.make(transport=transport).fetch_many(urls)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1]["urls"], urls)
+        self.assertTrue(calls[0][1]["options"]["no_cache"])
+
     def test_fetch(self):
         def mock(path, payload):
             self.assertEqual(payload["options"]["providers"], ["tavily"])

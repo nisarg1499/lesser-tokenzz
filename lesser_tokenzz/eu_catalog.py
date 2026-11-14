@@ -43,6 +43,14 @@ def validate_fetch_response(response, expected_url):
         page.get("url") != expected_url
         or page.get("canonical_url", expected_url) != expected_url
         or page.get("error")
+        or (
+            page.get("http_status") is not None
+            and (
+                type(page["http_status"]) is not int
+                or not 200 <= page["http_status"] < 300
+                or page["http_status"] == 206
+            )
+        )
         or page.get("status") != "succeeded"
         or page.get("warning")
         or not harmless_metadata_gaps(page.get("warnings", []))
@@ -51,6 +59,25 @@ def validate_fetch_response(response, expected_url):
         or not 0 < len(page["content"]) <= 20000
     ):
         raise ValueError("unsafe_or_partial_source")
+
+
+def split_fetch_batch(response, expected_urls):
+    """Match every batch result by URL, never position, before building a catalog."""
+    runs = response.get("preprocessor_runs")
+    if not isinstance(runs, list) or len(runs) != len(expected_urls):
+        raise ValueError("missing_or_extra_batch_runs")
+    by_url = {}
+    for run in runs:
+        pages = (run.get("output_payload") or {}).get("fetched_results")
+        if not isinstance(pages, list) or len(pages) != 1:
+            raise ValueError("missing_or_duplicate_batch_page")
+        url = pages[0].get("url")
+        if url not in expected_urls or url in by_url:
+            raise ValueError("unexpected_or_duplicate_batch_url")
+        single = {"preprocessor_runs": [run]}
+        validate_fetch_response(single, url)
+        by_url[url] = single
+    return [by_url[url] for url in expected_urls]
 
 
 def build_catalog(responses, build_elapsed_s):

@@ -37,13 +37,13 @@ class Tests(unittest.TestCase):
                         }
                     ]
                 }
-            url = payload["urls"][0]
-            names = MEMBERS[:14] if url == SOURCES[0] else MEMBERS[14:]
-            content = "Pages (27)\n" + "\n".join(
-                n + "\nEU Member State since 1958" for n in names
-            )
-            return {
-                "preprocessor_runs": [
+            runs = []
+            for url in payload["urls"]:
+                names = MEMBERS[:14] if url == SOURCES[0] else MEMBERS[14:]
+                content = "Pages (27)\n" + "\n".join(
+                    n + "\nEU Member State since 1958" for n in names
+                )
+                runs.append(
                     {
                         "output_payload": {
                             "fetched_results": [
@@ -58,8 +58,8 @@ class Tests(unittest.TestCase):
                             ]
                         }
                     }
-                ]
-            }
+                )
+            return {"preprocessor_runs": runs}
 
         self.resolver = EvidenceResolver(
             self.path,
@@ -78,11 +78,74 @@ class Tests(unittest.TestCase):
     def test_refresh_then_hit(self):
         first = self.resolver.resolve(["France"])
         self.assertEqual(first["cache_state"], "refreshed")
-        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len(self.calls), 2)
         second = self.resolver.resolve(["Germany"])
         self.assertEqual(second["cache_state"], "fresh_hit")
-        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len(self.calls), 2)
         self.assertNotIn("France", json.dumps(self.calls[0]))
+
+    def test_reordered_batch_matches_by_url(self):
+        original = self.resolver.provider.transport
+
+        def reverse(path, payload):
+            data = original(path, payload)
+            if path.endswith("fetch"):
+                data["preprocessor_runs"].reverse()
+            return data
+
+        self.resolver.provider.transport = reverse
+        result = self.resolver.resolve(["France"])
+        self.assertEqual(result["status"], "resolved")
+        self.assertEqual(result["provider_calls"], 2)
+        self.assertEqual(self.calls[1][1]["urls"], list(SOURCES))
+        self.assertEqual(json.loads(self.path.read_text())["build_api_calls"], 1)
+
+    def test_batch_partial_failure_never_publishes(self):
+        original = self.resolver.provider.transport
+        for kind in (
+            "missing",
+            "second_failed",
+            "second_truncated",
+            "http_error",
+            "http_partial",
+            "duplicate",
+            "unexpected",
+        ):
+            with self.subTest(kind=kind):
+
+                def broken(path, payload):
+                    data = original(path, payload)
+                    if path.endswith("fetch"):
+                        runs = data["preprocessor_runs"]
+                        if kind == "missing":
+                            runs.pop()
+                        elif kind == "second_failed":
+                            runs[1]["error"] = "provider failed"
+                        elif kind == "second_truncated":
+                            runs[1]["output_payload"]["fetched_results"][0][
+                                "content_truncated"
+                            ] = True
+                        elif kind == "http_error":
+                            runs[1]["output_payload"]["fetched_results"][0][
+                                "http_status"
+                            ] = 503
+                        elif kind == "http_partial":
+                            runs[1]["output_payload"]["fetched_results"][0][
+                                "http_status"
+                            ] = 206
+                        elif kind == "duplicate":
+                            runs[1] = runs[0]
+                        else:
+                            runs[1]["output_payload"]["fetched_results"][0][
+                                "url"
+                            ] = "https://example.com"
+                    return data
+
+                self.resolver.provider.transport = broken
+                self.assertEqual(
+                    self.resolver.resolve(["France"])["status"], "unresolved"
+                )
+                self.assertFalse(self.path.exists())
 
     def test_unsupported_no_outbound(self):
         for subjects, predicate, date in [
@@ -117,7 +180,7 @@ class Tests(unittest.TestCase):
         data["sources"][0]["fetched_at"] = (NOW + timedelta(days=1)).isoformat()
         self.path.write_text(json.dumps(data))
         self.assertEqual(self.resolver.resolve(["France"])["cache_state"], "refreshed")
-        self.assertEqual(len(self.calls), 6)
+        self.assertEqual(len(self.calls), 4)
 
     def test_atomic_failure_preserves_old_file(self):
         self.path.write_text("old revision")

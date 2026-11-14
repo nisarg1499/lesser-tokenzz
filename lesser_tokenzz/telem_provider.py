@@ -185,18 +185,27 @@ class TelemProvider:
         )
 
     def fetch(self, url):
-        p = urlsplit(url)
-        if (
-            p.scheme not in ("http", "https")
-            or not p.hostname
-            or p.username
-            or p.password
-        ):
-            raise ValueError("HTTP(S) URL without embedded credentials required")
+        return self.fetch_many([url])
+
+    def fetch_many(self, urls):
+        """Read up to five distinct pages in one native Telem request."""
+        if not isinstance(urls, (list, tuple)) or not 1 <= len(urls) <= 5:
+            raise ValueError("fetch_many requires 1..5 URLs")
+        if any(not isinstance(url, str) for url in urls) or len(set(urls)) != len(urls):
+            raise ValueError("Distinct string URLs required")
+        for url in urls:
+            p = urlsplit(url)
+            if (
+                p.scheme not in ("http", "https")
+                or not p.hostname
+                or p.username
+                or p.password
+            ):
+                raise ValueError("HTTP(S) URL without embedded credentials required")
         return self._call(
             "/v1/fetch",
             {
-                "urls": [url],
+                "urls": list(urls),
                 "options": {
                     "providers": self.fetch_providers,
                     "content_format": "text",

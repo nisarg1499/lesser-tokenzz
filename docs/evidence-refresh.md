@@ -17,7 +17,7 @@ embedding similarity. The normal SQL and metric interfaces are unchanged.
    accuracy routing selects providers within that allowlist.
 4. Require discovery of the supported official listing. Fetch its two known
    pagination URLs using one configured provider. Each request times out after
-   20 seconds; the resolver makes one search request and two fetch requests. A search
+   20 seconds; the resolver makes one search request and one batch fetch request for both URLs. A search
    request can involve multiple provider runs; monitor polling adds separate reads.
 5. Reject incomplete, conflicting-count, unexpected-membership, future-dated,
    unsupported-source or truncated evidence. The reviewed membership set is an
@@ -76,3 +76,11 @@ with three calls; the related fresh hit again made zero calls and took below 1 m
 The complete offline suite now has **55 passing tests**, including regression tests
 for the review findings. This repeat is still a functional smoke, not a matched
 end-to-end agent experiment.
+
+## Native batch Fetch
+
+The current resolver and standalone builder fetch the two required pages in one
+Telem request. Each result is matched by URL (not response order) and validated
+independently. Missing, duplicate, unexpected, failed, error-HTTP, or truncated
+pages prevent publication. The response size cap and fresh-read policy remain.
+Historical smoke results above predate this change. See [batch measurement](batch-fetch.md).

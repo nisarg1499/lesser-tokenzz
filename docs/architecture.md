@@ -28,7 +28,7 @@ flowchart TD
     C -- Missing, expired, or invalidated --> S[Telem Search: bounded provider policy]
     S --> RT[Optional Telem accuracy provider routing]
     RT --> D[Reviewed-source discovery audit]
-    D --> F[Telem Fetch: two fixed official EU pages]
+    D --> F[Telem batch Fetch: two official pages in one request]
     F --> E{Complete and valid evidence?}
     E -- No --> X
     E -- Yes --> W[Atomically save catalog with monitor generation]

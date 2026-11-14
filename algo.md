@@ -43,7 +43,7 @@ monitor mode, the current monitor generation. TTL is capped at 24 hours and rema
 a backup for missed monitor signals. A timestamp does not establish factual truth.
 
 With automatic refresh enabled, missing, expired or invalidated evidence triggers
-one constrained Telem search and two fixed official page fetches. Optional Telem
+one constrained Telem search and one batch Fetch request for two fixed official pages. Optional Telem
 accuracy routing selects within a bounded provider allowlist. Discovery rankings
 are audit metadata, not adaptive fetch selection. Validation precedes atomic save;
 failed refreshes remain unresolved rather than serving stale facts as current.

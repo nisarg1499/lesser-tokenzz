@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import time
 
-from .eu_catalog import EU_URL, build_catalog
+from .eu_catalog import EU_URL, build_catalog, split_fetch_batch
 from .telem_provider import TelemProvider
 
 
@@ -21,10 +21,11 @@ def main():
         search_providers=["brave"], fetch_providers=[args.fetch_provider]
     )
     started = time.perf_counter()
-    responses = [
-        provider.fetch(url).usage["response"] for url in (EU_URL, EU_URL + "?page=1")
-    ]
+    urls = (EU_URL, EU_URL + "?page=1")
+    result = provider.fetch_many(urls)
+    responses = split_fetch_batch(result.usage["response"], urls)
     catalog = build_catalog(responses, time.perf_counter() - started)
+    catalog["build_api_calls"] = 1
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(args.output.suffix + ".tmp")
     temporary.write_text(json.dumps(catalog, indent=2) + "\n")

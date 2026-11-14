@@ -15,7 +15,7 @@ from .eu_catalog import (
     EU_URL,
     build_catalog,
     harmless_metadata_gaps,
-    validate_fetch_response,
+    split_fetch_batch,
 )
 
 # Reviewed canonical names, not an unrestricted free-text search interface.
@@ -154,15 +154,14 @@ class EvidenceResolver:
                         row["url"] == EU_URL for row in selection["selected_sources"]
                     ):
                         raise ValueError("supported_source_not_discovered")
-                    responses = []
-                    for url in SOURCES:
-                        calls += 1
-                        result = self.provider.fetch(url)
-                        raw = result.usage["response"]
-                        provider_runs += len(raw.get("preprocessor_runs", []))
-                        validate_fetch_response(raw, url)
-                        responses.append(raw)
+                    calls += 1
+                    result = self.provider.fetch_many(list(SOURCES))
+                    raw = result.usage["response"]
+                    provider_runs += len(raw.get("preprocessor_runs", []))
+                    responses = split_fetch_batch(raw, SOURCES)
                     data = build_catalog(responses, time.perf_counter() - started)
+                    # One fetch HTTP request still reads two billable URLs.
+                    data["build_api_calls"] = 1
                     for source in data["sources"]:
                         source["metadata_limitations"] = [
                             w
