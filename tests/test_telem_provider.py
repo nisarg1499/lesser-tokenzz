@@ -5,6 +5,19 @@ from unittest.mock import patch
 from lesser_tokenzz.telem_provider import TelemProvider, TelemUnavailable
 
 
+class ResponseLimitTests(unittest.TestCase):
+    def test_oversized_json_rejected_before_parsing(self):
+        import io
+        from lesser_tokenzz.telem_provider import (
+            read_response,
+            MAX_RESPONSE_BYTES,
+            TelemRequestError,
+        )
+
+        with self.assertRaises(TelemRequestError):
+            read_response(io.BytesIO(b" " * (MAX_RESPONSE_BYTES + 1)))
+
+
 class Tests(unittest.TestCase):
     def make(self, **kw):
         return TelemProvider(

@@ -41,6 +41,8 @@ class MCPTests(unittest.TestCase):
                         str(db),
                         "--contracts",
                         str(config),
+                        "--eu-catalog",
+                        str(root / "missing-eu.json"),
                     ],
                 )
                 async with stdio_client(params) as (read, write):
@@ -49,7 +51,20 @@ class MCPTests(unittest.TestCase):
                         listing = await session.list_tools()
                         self.assertEqual(
                             {t.name for t in listing.tools},
-                            {"get_metric_contracts", "run_sql"},
+                            {
+                                "get_metric_contracts",
+                                "run_sql",
+                                "get_eu_membership_catalog",
+                                "resolve_external_fact",
+                            },
+                        )
+                        result = await session.call_tool(
+                            "resolve_external_fact", {"subjects": ["France"]}
+                        )
+                        self.assertFalse(result.isError)
+                        self.assertEqual(
+                            json.loads(result.content[0].text)["reason"],
+                            "refresh_disabled",
                         )
                         result = await session.call_tool("get_metric_contracts", {})
                         self.assertFalse(result.isError)

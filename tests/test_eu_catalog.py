@@ -53,6 +53,20 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_catalog(sources, 1)
 
+    def test_legacy_builder_rejects_failed_raw_run(self):
+        sources = self.sources()
+        sources[0]["preprocessor_runs"][0]["error"] = "incomplete"
+        with self.assertRaises(ValueError):
+            build_catalog(sources, 1)
+
+    def test_legacy_builder_rejects_warning(self):
+        sources = self.sources()
+        sources[0]["preprocessor_runs"][0]["output_payload"]["fetched_results"][0][
+            "warning"
+        ] = "partial"
+        with self.assertRaises(ValueError):
+            build_catalog(sources, 1)
+
     def test_stale_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "catalog.json"
