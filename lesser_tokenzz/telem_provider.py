@@ -17,6 +17,17 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
+MAX_RESPONSE_BYTES = 262144
+
+
+def read_response(response):
+    """Bound raw JSON bytes before parsing or allocating provider content."""
+    raw = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise TelemRequestError("Telem response exceeds byte limit")
+    return json.loads(raw)
+
+
 class TelemUnavailable(RuntimeError):
     pass
 
@@ -47,7 +58,7 @@ class TelemProvider:
         fetch_providers,
         tier="default",
         timeout_s=60,
-        transport=None
+        transport=None,
     ):
         self.search_providers, self.fetch_providers = providers(
             search_providers
@@ -90,7 +101,7 @@ class TelemProvider:
                 with build_opener(_NoRedirect()).open(
                     request, timeout=self.timeout_s
                 ) as response:
-                    data = json.load(response)
+                    data = read_response(response)
             except HTTPError as e:
                 raise TelemRequestError(
                     "Telem HTTP error", e.code, time.perf_counter() - start

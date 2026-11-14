@@ -9,6 +9,8 @@ from mcp.types import ToolAnnotations
 
 from .catalog_projection import lookup_membership
 from .eu_catalog import read_catalog
+from .evidence_resolver import EvidenceResolver
+from .telem_provider import TelemProvider
 from .metric_contract import MetricContracts, news_contracts
 from .metric_executor import MetricExecutor
 from .metric_executor_compact import CompactMetricExecutor
@@ -27,7 +29,12 @@ def main():
     )
     parser.add_argument("--eu-catalog", type=Path)
     parser.add_argument("--projected-catalog", action="store_true")
+    parser.add_argument("--auto-refresh-evidence", action="store_true")
+    parser.add_argument("--search-provider", default="brave")
+    parser.add_argument("--fetch-provider", default="tavily")
     args = parser.parse_args()
+    if args.auto_refresh_evidence and not args.eu_catalog:
+        parser.error("--auto-refresh-evidence requires --eu-catalog")
     if args.projected_catalog and not args.eu_catalog:
         parser.error("--projected-catalog requires --eu-catalog")
     contracts = (
@@ -59,6 +66,33 @@ def main():
         return query_database(args.database, sql, max_rows)
 
     if args.eu_catalog:
+        resolver = EvidenceResolver(
+            args.eu_catalog,
+            TelemProvider(
+                search_providers=[args.search_provider],
+                fetch_providers=[args.fetch_provider],
+                timeout_s=20,
+            ),
+            refresh_enabled=args.auto_refresh_evidence,
+        )
+
+        @mcp.tool(
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=False,
+                idempotentHint=False,
+                openWorldHint=True,
+            )
+        )
+        def resolve_external_fact(
+            subjects: list[str],
+            predicate: str = "eu_membership",
+            as_of: str | None = None,
+            max_age_hours: float = 24,
+        ) -> dict:
+            """Resolve current EU membership with compact citations; optional paid refresh on stale/missing evidence. Only canonical public country names; no private business text."""
+            return resolver.resolve(subjects, predicate, as_of, max_age_hours)
+
         if args.projected_catalog:
 
             @mcp.tool(annotations=readonly)

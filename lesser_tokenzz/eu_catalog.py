@@ -9,8 +9,56 @@ import re
 EU_URL = "https://european-union.europa.eu/principles-countries-history/eu-countries_en"
 
 
+def harmless_metadata_gaps(warnings):
+    """Accept only known unavailable metadata, never partial-content warnings."""
+    fields = (
+        "cache_state",
+        "description",
+        "http_status",
+        "js_rendered",
+        "pdf_mode",
+        "warning",
+    )
+    return isinstance(warnings, list) and all(
+        isinstance(w, dict)
+        and w.get("code") == "capability_gap"
+        and any("`" + field + "`" in w.get("message", "") for field in fields)
+        for w in warnings
+    )
+
+
+def validate_fetch_response(response, expected_url):
+    """Validate the exact raw records consumed by build_catalog, not filtered hits."""
+    runs = response.get("preprocessor_runs")
+    if not isinstance(runs, list) or len(runs) != 1:
+        raise ValueError("ambiguous_fetch_runs")
+    run = runs[0]
+    if run.get("error") or run.get("warning") or run.get("warnings"):
+        raise ValueError("failed_fetch_run")
+    pages = (run.get("output_payload") or {}).get("fetched_results")
+    if not isinstance(pages, list) or len(pages) != 1:
+        raise ValueError("missing_or_duplicate_page")
+    page = pages[0]
+    if (
+        page.get("url") != expected_url
+        or page.get("canonical_url", expected_url) != expected_url
+        or page.get("error")
+        or page.get("status") != "succeeded"
+        or page.get("warning")
+        or not harmless_metadata_gaps(page.get("warnings", []))
+        or page.get("content_truncated")
+        or not isinstance(page.get("content"), str)
+        or not 0 < len(page["content"]) <= 20000
+    ):
+        raise ValueError("unsafe_or_partial_source")
+
+
 def build_catalog(responses, build_elapsed_s):
     """Require both complete listing pages and agreement with their stated total."""
+    if len(responses) != 2:
+        raise ValueError("Exactly two official listing responses are required")
+    for response, expected_url in zip(responses, (EU_URL, EU_URL + "?page=1")):
+        validate_fetch_response(response, expected_url)
     members, sources, totals = {}, [], set()
     for response in responses:
         for run in response["preprocessor_runs"]:
