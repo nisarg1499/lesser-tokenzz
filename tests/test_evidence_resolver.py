@@ -70,6 +70,11 @@ class Tests(unittest.TestCase):
             now=lambda: NOW,
         )
 
+    def test_reviewed_nonmember_names(self):
+        result = self.resolver.resolve(["Brazil", "South Africa"])
+        self.assertEqual(result["status"], "resolved")
+        self.assertTrue(all(not row["member"] for row in result["facts"]))
+
     def test_refresh_then_hit(self):
         first = self.resolver.resolve(["France"])
         self.assertEqual(first["cache_state"], "refreshed")

@@ -58,6 +58,25 @@ class MCPTests(unittest.TestCase):
                                 "resolve_external_fact",
                             },
                         )
+                        schemas = {t.name: t.inputSchema for t in listing.tools}
+                        rows = schemas["run_sql"]["properties"]["max_rows"]
+                        self.assertEqual((rows["minimum"], rows["maximum"]), (1, 1000))
+                        predicate = schemas["resolve_external_fact"]["properties"][
+                            "predicate"
+                        ]
+                        self.assertEqual(predicate.get("const"), "eu_membership")
+                        rejected = await session.call_tool(
+                            "run_sql", {"sql": "SELECT 1", "max_rows": 10000}
+                        )
+                        self.assertTrue(rejected.isError)
+                        rejected = await session.call_tool(
+                            "resolve_external_fact",
+                            {
+                                "subjects": ["France"],
+                                "predicate": "current EU membership",
+                            },
+                        )
+                        self.assertTrue(rejected.isError)
                         result = await session.call_tool(
                             "resolve_external_fact", {"subjects": ["France"]}
                         )
