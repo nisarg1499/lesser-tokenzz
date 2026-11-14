@@ -30,7 +30,7 @@ The server uses the metric helpers to describe definitions; it does not expose t
 - Credentials come from the environment. The adapter accepts only known Telem base URLs and does not log keys.
 - EU evidence has a 24-hour TTL. A stale catalog is not served as current. The parser is intentionally specific to the two official listing pages and fails when the expected shape changes.
 - Name projection is case-insensitive exact matching, not entity resolution. An unmatched alias does not prove non-membership.
-- The original news adapter pins four reviewed knowledge records and schema fingerprints. Generic JSON contracts are operator-reviewed inputs, not automatically verified business truth.
+- The original news adapter pins five reviewed knowledge records and schema fingerprints. Generic JSON contracts are operator-reviewed inputs, not automatically verified business truth.
 
 ## Deliberate omissions
 
