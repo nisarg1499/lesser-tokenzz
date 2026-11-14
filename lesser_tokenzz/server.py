@@ -3,6 +3,9 @@
 import argparse
 import json
 from pathlib import Path
+from typing import Annotated, Literal
+
+from pydantic import Field
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -61,8 +64,8 @@ def main():
         return result
 
     @mcp.tool(annotations=readonly)
-    def run_sql(sql: str, max_rows: int = 100) -> dict:
-        """Query live business data. Respect metric populations; inspect truncation."""
+    def run_sql(sql: str, max_rows: Annotated[int, Field(ge=1, le=1000)] = 100) -> dict:
+        """Query live business data. max_rows is 1–1000; inspect truncation. Respect metric populations."""
         return query_database(args.database, sql, max_rows)
 
     if args.eu_catalog:
@@ -86,9 +89,9 @@ def main():
         )
         def resolve_external_fact(
             subjects: list[str],
-            predicate: str = "eu_membership",
+            predicate: Literal["eu_membership"] = "eu_membership",
             as_of: str | None = None,
-            max_age_hours: float = 24,
+            max_age_hours: Annotated[float, Field(gt=0, le=24)] = 24,
         ) -> dict:
             """Resolve current EU membership with compact citations; optional paid refresh on stale/missing evidence. Only canonical public country names; no private business text."""
             return resolver.resolve(subjects, predicate, as_of, max_age_hours)

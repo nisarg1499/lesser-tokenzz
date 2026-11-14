@@ -17,7 +17,7 @@ from .eu_catalog import (
 
 # Reviewed canonical names, not an unrestricted free-text search interface.
 COUNTRIES = set(
-    "Austria|Belgium|Bulgaria|Croatia|Cyprus|Czechia|Denmark|Estonia|Finland|France|Germany|Greece|Hungary|Ireland|Italy|Latvia|Lithuania|Luxembourg|Malta|Netherlands|Poland|Portugal|Romania|Slovakia|Slovenia|Spain|Sweden|United Kingdom|Norway|Switzerland|United States|Canada|Australia|Japan|China|India|Singapore".split(
+    "Austria|Belgium|Bulgaria|Croatia|Cyprus|Czechia|Denmark|Estonia|Finland|France|Germany|Greece|Hungary|Ireland|Italy|Latvia|Lithuania|Luxembourg|Malta|Netherlands|Poland|Portugal|Romania|Slovakia|Slovenia|Spain|Sweden|United Kingdom|Norway|Switzerland|United States|Canada|Australia|Japan|China|India|Singapore|Brazil|South Africa".split(
         "|"
     )
 )

@@ -1,7 +1,7 @@
 """Typed business expressions with population-preserving SQL construction.
 
 The compiler is generic; the news adapter is a manually reviewed configuration
-for four specific source definitions. It is not a prose-to-SQL model or a proof
+for five specific source definitions. It is not a prose-to-SQL model or a proof
 that arbitrary business definitions are correct.
 """
 
@@ -266,6 +266,7 @@ class MetricContracts:
 # This adapter is a reviewed business configuration, not a universal compiler.
 # Source hashes intentionally reject changed definitions until they are reviewed.
 _NEWS_REVISIONS = {
+    0: "fd30ac3b41a3adc193c7527897b2c050f2172368d26ee322d5b77aaaca0cb117",
     3: "62ee016aa56c3af7974e44747a05d4dbf70374a13bc9fa7b956e2852810f9aff",
     52: "e636b65f0864d404c26ab027953dc43de27a2a27da6d2f3351e952b836789357",
     53: "404a7eec7efafb0401dec014b19643a77c924e7e9a2fcd75848f1a8cd39bec31",
@@ -274,7 +275,7 @@ _NEWS_REVISIONS = {
 
 
 def news_contracts(database: str | Path, knowledge: str | Path) -> MetricContracts:
-    """Load only schema and four approved business definitions, never task data."""
+    """Load only schema and five approved business definitions, never task data."""
     database, knowledge = Path(database).resolve(), Path(knowledge).resolve()
 
     def snapshot():
@@ -292,7 +293,14 @@ def news_contracts(database: str | Path, knowledge: str | Path) -> MetricContrac
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as conn:
             schema = list(conn.execute("PRAGMA table_info(sessions)"))
             fields = [row[1] for row in schema]
-        if not {"seshkey", "bncrate", "ctrval"}.issubset(fields):
+        if not {
+            "seshkey",
+            "bncrate",
+            "ctrval",
+            "seshviews",
+            "engscore",
+            "seshdur",
+        }.issubset(fields):
             raise ValueError("Required physical field mapping is unavailable")
         return fields, {"record_sha256": hashes, "schema_sha256": fingerprint(schema)}
 
@@ -312,6 +320,17 @@ def news_contracts(database: str | Path, knowledge: str | Path) -> MetricContrac
             "No joins, partitions, user-defined population filters, or aggregation are supported.",
         ],
         "metrics": {
+            "user_engagement_rate": {
+                "source_ids": [0],
+                "unit": "engagement score times article views per second",
+                "expression": expr(
+                    "div",
+                    expr(
+                        "mul", 1.0, expr("mul", field("seshviews"), field("engscore"))
+                    ),
+                    field("seshdur"),
+                ),
+            },
             "adjusted_bounce_rate": {
                 "source_ids": [3],
                 "unit": "source bounce-rate scale",
