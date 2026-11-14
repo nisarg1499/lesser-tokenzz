@@ -40,3 +40,13 @@ python -m black --check lesser_tokenzz tests examples
 ```
 
 See [algorithm](algo.md), [architecture](docs/architecture.md), [results](docs/results.md), and [reproduction](docs/reproduction.md). This is a focused hackathon implementation, not a general search engine. No benchmark database, credentials, or private traces are included.
+
+### Automatic evidence refresh (opt-in)
+
+Add `--auto-refresh-evidence --search-provider brave --fetch-provider tavily`
+when starting the server with `--eu-catalog data/eu.json`. This enables
+`resolve_external_fact(subjects, predicate="eu_membership", as_of=None,
+max_age_hours=24)` to discover and refresh missing or expired evidence through
+Telem. Calls can incur charges. Without that flag, missing evidence is unresolved.
+Only reviewed canonical country names and current EU membership are supported.
+See [refresh implementation](docs/evidence-refresh.md) for limits and smoke results.

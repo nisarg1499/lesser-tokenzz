@@ -47,3 +47,13 @@ We reuse business definitions and a sourced public fact dimension across differe
 - Exact country-name matching is not entity resolution.
 - The agent can still write incorrect SQL or misuse evidence.
 - The recorded pilot improvements are a small historical result, not a guarantee. See `docs/results.md` for selection, regressions and measurement boundaries.
+
+## Opt-in automatic evidence refresh
+
+`resolve_external_fact` now checks scoped current EU evidence and can rebuild it
+when missing or stale. With `--auto-refresh-evidence`, one constrained Telem search
+must find the supported official listing, then two bounded page fetches supply the
+complete source set. Validation precedes atomic publication; failures remain
+unresolved. Related requests reuse the validated facts, not prior SQL or answers.
+See [implementation and live smoke](docs/evidence-refresh.md). Automatic provider
+routing and general fact extraction remain future work.
