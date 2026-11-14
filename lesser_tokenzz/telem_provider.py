@@ -122,9 +122,17 @@ class TelemProvider:
         now = datetime.now(timezone.utc).isoformat()
         hits = []
         for run in data["preprocessor_runs"]:
-            for item in (run.get("output_payload") or {}).get(
-                "fetched_results" if fetch else "results", []
-            ):
+            if not isinstance(run, dict):
+                continue
+            output = run.get("output_payload") or {}
+            if not isinstance(output, dict):
+                continue
+            items = output.get("fetched_results" if fetch else "results", [])
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
                 if (
                     run.get("error")
                     or item.get("error")
@@ -145,6 +153,7 @@ class TelemProvider:
                             "result": item,
                             "run_latency_ms": run.get("latency_ms"),
                             "batch_index": run.get("batch_index"),
+                            "run_status": run.get("status"),
                         },
                     )
                 )
@@ -182,6 +191,28 @@ class TelemProvider:
             options["include_domains"] = list(include_domains)
         return self._call(
             "/v1/search", {"user_input": {"query": query}, "search": options}
+        )
+
+    def search_many(self, queries, *, limit=3):
+        """One native batch request; retain batch_index and provider failures."""
+        if not isinstance(queries, list) or not 1 <= len(queries) <= 3:
+            raise ValueError("search_many requires 1..3 queries")
+        if any(
+            not isinstance(q, str) or not q.strip() or len(q) > 500 for q in queries
+        ):
+            raise ValueError("Queries must be nonempty and at most 500 characters")
+        if type(limit) is not int or not 1 <= limit <= 5:
+            raise ValueError("limit must be 1..5")
+        options = {
+            "providers": {"include": self.search_providers},
+            "num_results": limit,
+            "tier": self.tier,
+        }
+        if self.auto_routing:
+            options["auto_routing"] = self.auto_routing
+        return self._call(
+            "/v1/search",
+            {"user_input": [{"query": q} for q in queries], "search": options},
         )
 
     def fetch(self, url):

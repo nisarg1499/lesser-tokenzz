@@ -60,3 +60,16 @@ Polling failures remain unresolved; TTL is retained. This does not create a paid
 monitor or guarantee immediate detection of every source change.
 See [setup and verification status](docs/monitor-invalidation.md) and the
 [complete architecture diagram](docs/architecture.md).
+
+### Public web fallback (opt-in)
+
+Add `--web-fallback` to expose `search_public_web` for external facts outside the
+reviewed EU catalog. It batches up to three independent **public-only** queries
+through Telem and returns compact cited snippets, not verified answers. The agent
+must assess the evidence; unresolved results are not negative facts. The existing
+EU bookmarks and freshness checks stay unchanged. See [limits and tests](docs/public-web-fallback.md).
+
+Experimental source bookmarks can automatically persist exactly corroborated
+passages from two operator-vetted hosts. This is source checking, not generic fact
+verification; unknown fetch metadata fails closed. See the fallback document
+above before enabling `--source-bookmarks`.

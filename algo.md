@@ -74,3 +74,15 @@ does not create recurring monitors or expose a public webhook.
 
 Monitor-mode latency and costs are separate from the earlier monitor-disabled
 benchmark. See [results](docs/resolver-results.md) for measurement boundaries.
+
+## Public facts outside the reviewed catalog
+
+With `--web-fallback`, the agent can call `search_public_web` with 1–3 independent
+public-only queries. One native Telem batch call returns per-query cited snippets
+or unresolved results. These are untrusted, unverified evidence, not cached facts
+or final answers. No DB rows are automatically sent. The existing EU path remains
+unchanged. See [fallback design](docs/public-web-fallback.md).
+
+An additional opt-in source tier fetches two vetted hosts and saves only exact
+corroborated passages with complete fetch provenance. These remain claim-unverified,
+use exact-query lookup and expire after 24 hours; they do not extend EU validation.

@@ -35,6 +35,16 @@ flowchart TD
     W --> H
     H --> A
     X --> A
+    A --> PS[Optional search_public_web: unsupported public facts]
+    PS --> BS[Telem batch Search: 1 to 3 public queries]
+    BS --> US[Bounded untrusted snippets with per-query citations or unresolved]
+    US --> A
+    A --> SB[Optional source bookmark: two vetted fetched sources]
+    SB --> SC{Complete metadata and exact shared passage?}
+    SC -- No --> SU[Unresolved: no save]
+    SC -- Yes --> SP[(Atomic source passage record: claim unverified)]
+    SP --> SL[Exact-query lookup within 24 hours]
+    SL --> A
     A --> O[Answer using live data and source-backed facts]
     TM[Telem scheduled monitor] --> CS[(Telem change stream)]
     CS --> P
@@ -118,3 +128,9 @@ serving a cached fact merely because its TTL has not expired.
 
 See [monitor setup and verification](monitor-invalidation.md),
 [measured resolver results](resolver-results.md), and [routing guide](telem-routing.md).
+
+## Unsupported public facts
+
+The opt-in [public web fallback](public-web-fallback.md) is agent-driven, not an
+automatic widening of the EU resolver. It batches independent public queries and
+returns unverified source snippets. It never writes into the reviewed EU cache.

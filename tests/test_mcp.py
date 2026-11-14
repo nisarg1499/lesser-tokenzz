@@ -14,6 +14,15 @@ from mcp.client.stdio import stdio_client
 
 class MCPTests(unittest.TestCase):
     def test_stdio_catalog_and_sql(self):
+        self.check_tools(False)
+
+    def test_opt_in_public_search(self):
+        self.check_tools(True)
+
+    def test_opt_in_bookmark_tools(self):
+        self.check_tools(True, True)
+
+    def check_tools(self, fallback, bookmarks=False):
         async def check():
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -43,7 +52,20 @@ class MCPTests(unittest.TestCase):
                         str(config),
                         "--eu-catalog",
                         str(root / "missing-eu.json"),
-                    ],
+                    ]
+                    + (["--web-fallback"] if fallback else [])
+                    + (
+                        [
+                            "--source-bookmarks",
+                            str(root / "bookmarks"),
+                            "--trusted-source-domain",
+                            "a.example.com",
+                            "--trusted-source-domain",
+                            "b.example.com",
+                        ]
+                        if bookmarks
+                        else []
+                    ),
                 )
                 async with stdio_client(params) as (read, write):
                     async with ClientSession(read, write) as session:
@@ -56,9 +78,32 @@ class MCPTests(unittest.TestCase):
                                 "run_sql",
                                 "get_eu_membership_catalog",
                                 "resolve_external_fact",
-                            },
+                            }
+                            | ({"search_public_web"} if fallback else set())
+                            | (
+                                {"bookmark_public_evidence", "lookup_public_bookmarks"}
+                                if bookmarks
+                                else set()
+                            ),
                         )
                         schemas = {t.name: t.inputSchema for t in listing.tools}
+                        if bookmarks:
+                            result = await session.call_tool(
+                                "lookup_public_bookmarks",
+                                {"public_query": "public topic"},
+                            )
+                            self.assertEqual(
+                                json.loads(result.content[0].text)["status"],
+                                "unresolved",
+                            )
+                        if fallback:
+                            props = schemas["search_public_web"]["properties"]
+                            self.assertEqual(props["public_queries"]["maxItems"], 3)
+                            self.assertEqual(props["max_results"]["maximum"], 5)
+                            rejected = await session.call_tool(
+                                "search_public_web", {"public_queries": ["q"] * 4}
+                            )
+                            self.assertTrue(rejected.isError)
                         rows = schemas["run_sql"]["properties"]["max_rows"]
                         self.assertEqual((rows["minimum"], rows["maximum"]), (1, 1000))
                         predicate = schemas["resolve_external_fact"]["properties"][
