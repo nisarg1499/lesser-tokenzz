@@ -8,6 +8,8 @@ import tempfile
 import threading
 import time
 
+from .discovery_audit import discovery_audit
+
 from .eu_catalog import (
     EU_URL,
     build_catalog,
@@ -112,6 +114,7 @@ class EvidenceResolver:
             return {"status": "unresolved", "reason": "unsupported_scope_or_subject"}
         started = time.perf_counter()
         calls = 0
+        provider_runs = 0
         with self.lock:
             data = self._load(max_age_hours)
             state = "fresh_hit"
@@ -124,15 +127,18 @@ class EvidenceResolver:
                     discovery = self.provider.search(
                         QUERY, limit=3, include_domains=["european-union.europa.eu"]
                     )
+                    provider_runs += len(discovery.usage["response"].get("preprocessor_runs", []))
                     # The parser supports this source family only. Other official pages
                     # are not automatically interchangeable evidence.
-                    if not any(hit.url.rstrip("/") == EU_URL for hit in discovery.hits):
+                    selection = discovery_audit(discovery, SOURCES)
+                    if not any(row["url"] == EU_URL for row in selection["selected_sources"]):
                         raise ValueError("supported_source_not_discovered")
                     responses = []
                     for url in SOURCES:
                         calls += 1
                         result = self.provider.fetch(url)
                         raw = result.usage["response"]
+                        provider_runs += len(raw.get("preprocessor_runs", []))
                         validate_fetch_response(raw, url)
                         responses.append(raw)
                     data = build_catalog(responses, time.perf_counter() - started)
@@ -153,6 +159,8 @@ class EvidenceResolver:
                         "sources": list(SOURCES),
                         "policy": "exact official listing family",
                         "provider_calls": calls,
+                        "provider_runs": provider_runs,
+                        **selection,
                     }
                     self._save(data)
                 except Exception:
@@ -192,10 +200,13 @@ class EvidenceResolver:
                 "provider_metadata_incomplete": any(
                     source.get("metadata_limitations") for source in data["sources"]
                 ),
+                "discovery": data.get("discovery", {}) if state == "refreshed" else None,
                 "revision": revision,
                 "max_age_hours": max_age_hours,
                 "provider_calls": calls,
                 "elapsed_s": round(time.perf_counter() - started, 3),
+                "telem_request_count": calls,
+                "provider_run_count": provider_runs,
                 "provider_cost_usd": None,
                 "freshness_note": "Retrieval TTL is not proof of source accuracy; current membership only.",
             }

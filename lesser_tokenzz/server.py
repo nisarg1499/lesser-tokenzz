@@ -33,7 +33,8 @@ def main():
     parser.add_argument("--eu-catalog", type=Path)
     parser.add_argument("--projected-catalog", action="store_true")
     parser.add_argument("--auto-refresh-evidence", action="store_true")
-    parser.add_argument("--search-provider", default="brave")
+    parser.add_argument("--search-provider", default="brave", help="Comma-separated bounded provider allowlist")
+    parser.add_argument("--auto-routing", choices=["accuracy"], help="Opt-in Telem provider routing within the allowlist")
     parser.add_argument("--fetch-provider", default="tavily")
     args = parser.parse_args()
     if args.auto_refresh_evidence and not args.eu_catalog:
@@ -72,7 +73,8 @@ def main():
         resolver = EvidenceResolver(
             args.eu_catalog,
             TelemProvider(
-                search_providers=[args.search_provider],
+                search_providers=args.search_provider.split(","),
+                auto_routing=args.auto_routing,
                 fetch_providers=[args.fetch_provider],
                 timeout_s=20,
             ),

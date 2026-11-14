@@ -59,6 +59,7 @@ class TelemProvider:
         tier="default",
         timeout_s=60,
         transport=None,
+        auto_routing=None,
     ):
         self.search_providers, self.fetch_providers = providers(
             search_providers
@@ -67,6 +68,9 @@ class TelemProvider:
             raise ValueError("Invalid tier")
         if timeout_s <= 0:
             raise ValueError("Invalid timeout")
+        if auto_routing not in (None, "accuracy"):
+            raise ValueError("auto_routing must be None or accuracy")
+        self.auto_routing = auto_routing
         self.tier, self.timeout_s, self.transport = tier, timeout_s, transport
 
     def _call(self, path, payload, fetch=False):
@@ -172,6 +176,8 @@ class TelemProvider:
             "num_results": limit,
             "tier": self.tier,
         }
+        if self.auto_routing:
+            options["auto_routing"] = self.auto_routing
         if include_domains:
             options["include_domains"] = list(include_domains)
         return self._call(
