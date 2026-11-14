@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lesser-tokenzz"
+version = "0.1.0"
+description = "Business definitions and source-backed public facts for MCP agents"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.0,<2"]
+
+[project.optional-dependencies]
+dev = ["black>=24"]
+
+[project.scripts]
+lesser-tokenzz = "lesser_tokenzz.server:main"
+lesser-tokenzz-build = "lesser_tokenzz.build_catalog:main"
+
+[tool.setuptools.packages.find]
+include = ["lesser_tokenzz*"]
