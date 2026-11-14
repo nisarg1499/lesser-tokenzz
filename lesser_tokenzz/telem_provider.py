@@ -1,0 +1,191 @@
+"""Optional real Telem adapter; injected transports are MOCKS, never live evidence."""
+
+import json
+import os
+import time
+from datetime import datetime, timezone
+from urllib.request import Request, HTTPRedirectHandler, build_opener
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from .search_provider import SearchHit, SearchResponse
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Never forward an authorization header to a redirected destination."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class TelemUnavailable(RuntimeError):
+    pass
+
+
+class TelemRequestError(RuntimeError):
+    def __init__(self, message, status=None, elapsed_s=None):
+        super().__init__(message)
+        self.status, self.elapsed_s, self.cost_usd = status, elapsed_s, None
+
+
+def providers(values):
+    if (
+        not isinstance(values, (list, tuple))
+        or not values
+        or any(not isinstance(v, str) or not v.strip() for v in values)
+    ):
+        raise ValueError("Explicit nonempty provider list required; no default fan-out")
+    return list(dict.fromkeys(v.strip().lower() for v in values))
+
+
+class TelemProvider:
+    name = "telem"
+
+    def __init__(
+        self,
+        *,
+        search_providers,
+        fetch_providers,
+        tier="default",
+        timeout_s=60,
+        transport=None
+    ):
+        self.search_providers, self.fetch_providers = providers(
+            search_providers
+        ), providers(fetch_providers)
+        if tier not in ("minimalist", "default", "extended", "max"):
+            raise ValueError("Invalid tier")
+        if timeout_s <= 0:
+            raise ValueError("Invalid timeout")
+        self.tier, self.timeout_s, self.transport = tier, timeout_s, transport
+
+    def _call(self, path, payload, fetch=False):
+        start = time.perf_counter()
+        if self.transport is not None:
+            data = self.transport(path, payload)
+        else:
+            key = os.environ.get("TELEM_API_KEY")
+            if not key:
+                raise TelemUnavailable("TELEM_API_KEY not configured; no request sent")
+            base = os.environ.get("TELEM_BASE_URL", "https://hack.telem.ai/api").rstrip(
+                "/"
+            )
+            if base not in (
+                "https://router.telem.ai",
+                "https://hack.telem.ai/api/router",
+                "https://hack.telem.ai/api",
+            ):
+                raise TelemUnavailable(
+                    "Unapproved Telem base URL; no credential transmitted"
+                )
+            request = Request(
+                base + path,
+                data=json.dumps(payload).encode(),
+                headers={
+                    "Authorization": "Bearer " + key,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with build_opener(_NoRedirect()).open(
+                    request, timeout=self.timeout_s
+                ) as response:
+                    data = json.load(response)
+            except HTTPError as e:
+                raise TelemRequestError(
+                    "Telem HTTP error", e.code, time.perf_counter() - start
+                ) from None
+            except (URLError, TimeoutError, ValueError):
+                raise TelemRequestError(
+                    "Telem transport/JSON error", elapsed_s=time.perf_counter() - start
+                ) from None
+        elapsed = time.perf_counter() - start
+        if not isinstance(data, dict) or not isinstance(
+            data.get("preprocessor_runs"), list
+        ):
+            raise TelemRequestError("Malformed Telem response", elapsed_s=elapsed)
+        now = datetime.now(timezone.utc).isoformat()
+        hits = []
+        for run in data["preprocessor_runs"]:
+            for item in (run.get("output_payload") or {}).get(
+                "fetched_results" if fetch else "results", []
+            ):
+                if (
+                    run.get("error")
+                    or item.get("error")
+                    or (fetch and item.get("status") != "succeeded")
+                ):
+                    continue
+                provider = (
+                    item.get("provider") if fetch else run.get("preprocessor_name")
+                )
+                hits.append(
+                    SearchHit(
+                        item.get("title") or "",
+                        item.get("url") or "",
+                        item.get("content") or item.get("summary") or "",
+                        item.get("fetched_at") or now,
+                        provider or "unknown",
+                        {
+                            "result": item,
+                            "run_latency_ms": run.get("latency_ms"),
+                            "batch_index": run.get("batch_index"),
+                        },
+                    )
+                )
+        # Preserve full per-provider records: failures, latency, usage and any billing
+        # fields. Published API examples do not promise invoice totals; never guess.
+        return SearchResponse(
+            hits,
+            elapsed,
+            self.name,
+            cost_usd=None,
+            billable_units=None,
+            usage={
+                "live": self.transport is None,
+                "measurement": "live" if self.transport is None else "mock",
+                "response": data,
+                "cost_status": "unreconciled; consult provider billing",
+                "search_providers": self.search_providers,
+                "fetch_providers": self.fetch_providers,
+            },
+        )
+
+    def search(self, query, *, limit=10, include_domains=None):
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("Nonempty query required")
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("limit must be 1..20 per provider")
+        options = {
+            "providers": {"include": self.search_providers},
+            "num_results": limit,
+            "tier": self.tier,
+        }
+        if include_domains:
+            options["include_domains"] = list(include_domains)
+        return self._call(
+            "/v1/search", {"user_input": {"query": query}, "search": options}
+        )
+
+    def fetch(self, url):
+        p = urlsplit(url)
+        if (
+            p.scheme not in ("http", "https")
+            or not p.hostname
+            or p.username
+            or p.password
+        ):
+            raise ValueError("HTTP(S) URL without embedded credentials required")
+        return self._call(
+            "/v1/fetch",
+            {
+                "urls": [url],
+                "options": {
+                    "providers": self.fetch_providers,
+                    "content_format": "text",
+                    "inline_max_chars": 20000,
+                    "no_cache": True,
+                },
+            },
+            fetch=True,
+        )
