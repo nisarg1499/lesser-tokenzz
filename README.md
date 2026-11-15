@@ -69,6 +69,10 @@ through Telem and returns compact cited snippets, not verified answers. The agen
 must assess the evidence; unresolved results are not negative facts. The existing
 EU bookmarks and freshness checks stay unchanged. See [limits and tests](docs/public-web-fallback.md).
 
+Add `--search-cache DIRECTORY` to reuse those snippets for up to 24 hours, so a
+repeated public fact needs no new Telem request. It stores unverified snippets,
+never answers, and matches on normalized keywords rather than meaning.
+
 Experimental source bookmarks can automatically persist exactly corroborated
 passages from two operator-vetted hosts. This is source checking, not generic fact
 verification; unknown fetch metadata fails closed. See the fallback document

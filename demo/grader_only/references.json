@@ -1,0 +1,14 @@
+{
+  "note": "Grader only. Never pass this file or its contents to a solver session. Derived by hand from data/demo.sqlite (France 20/10, Germany 40/20, Canada 60/30) and data/contracts.json. adjusted_bounce = bounce * (1 - ctr/100): France 18, Germany 32, Canada 42. bounce_percentile = percent_rank ascending over ALL sessions: 0.0, 0.5, 1.0.",
+  "tolerance": "Numeric values must match within 0.01 after rounding; all listed values must be present. Citation quality is recorded separately and is not part of the numeric match.",
+  "references": {
+    "eu_avg_adjusted_bounce": {"values": [25.0], "rationale": "France and Germany are EU members: (18 + 32) / 2."},
+    "eu_session_counts": {"values": [2, 1], "rationale": "EU: France, Germany. Non-member: Canada."},
+    "eu_global_ranking": {"values": [0.0, 0.5], "rationale": "Ranked over all three sessions before filtering: France 0.0, Germany 0.5. Ranking after filtering (0.0, 1.0) is wrong."},
+    "non_eu_max_ctr": {"values": [30.0], "keywords": ["Canada"], "rationale": "Canada is the only non-member row."},
+    "eu_share_adjusted_bounce": {"values": [54.35], "rationale": "50 / 92 = 54.35%."},
+    "eu_top_percentile": {"values": [0.5], "keywords": ["Germany"], "rationale": "Germany, session id 2, percentile 0.5 over all sessions."},
+    "euro_currency_avg_ctr": {"values": [15.0], "rationale": "France and Germany use the euro; Canada uses the Canadian dollar: (10 + 20) / 2."},
+    "g7_total_bounce": {"values": [120.0], "rationale": "France, Germany and Canada are all G7 members: 20 + 40 + 60."}
+  }
+}

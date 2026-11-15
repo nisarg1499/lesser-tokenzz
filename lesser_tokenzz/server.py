@@ -16,6 +16,7 @@ from .evidence_resolver import EvidenceResolver
 from .monitor_invalidation import MonitorInvalidation, TelemMonitorClient
 from .telem_provider import TelemProvider
 from .public_search import PublicWebSearch
+from .search_cache import PublicSearchCache
 from .source_bookmarks import SourceBookmarks
 from .metric_contract import MetricContracts, news_contracts
 from .metric_executor import MetricExecutor
@@ -51,6 +52,11 @@ def main():
         help="Opt-in paid public search for unsupported external facts",
     )
     parser.add_argument(
+        "--search-cache",
+        type=Path,
+        help="Opt-in directory reusing public search snippets for 24 hours",
+    )
+    parser.add_argument(
         "--telem-monitor-id",
         help="Existing reviewed monitor; polls before each evidence read",
     )
@@ -70,6 +76,8 @@ def main():
     args = parser.parse_args()
     if args.source_bookmarks and not (args.web_fallback and args.trusted_source_domain):
         parser.error("--source-bookmarks requires --web-fallback and trusted domains")
+    if args.search_cache and not args.web_fallback:
+        parser.error("--search-cache requires --web-fallback")
     if args.telem_monitor_id and not (args.eu_catalog and args.auto_refresh_evidence):
         parser.error("--telem-monitor-id requires catalog and auto-refresh")
     if args.auto_refresh_evidence and not args.eu_catalog:
@@ -111,7 +119,8 @@ def main():
                 fetch_providers=[args.fetch_provider],
                 timeout_s=20,
                 auto_routing=args.auto_routing,
-            )
+            ),
+            cache=PublicSearchCache(args.search_cache) if args.search_cache else None,
         )
 
         @mcp.tool(
@@ -126,7 +135,7 @@ def main():
             public_queries: Annotated[list[str], Field(min_length=1, max_length=3)],
             max_results: Annotated[int, Field(ge=1, le=5)] = 3,
         ) -> dict:
-            """Fallback for external facts outside the EU resolver. Batch 1..3 independent public-only queries through Telem. Never send DB rows, private context, secrets or full business questions. Returns cited untrusted snippets, not verified answers; assess sources and report uncertainty. Paid external transmission; no cache writes. Use EU resolver for supported EU facts."""
+            """Fallback for external facts outside the EU resolver. First read the entities actually present in the data, then send every public fact you need together in ONE call (1..3 independent public-only queries, one Telem batch). Prefer one entity-specific query per entity over broad list queries. Phrase each query as a short lowercase fact topic, entity first, e.g. 'canada official currency'; no site: filters, years or example lists. Consistent phrasing lets the server reuse snippets from an optional 24h local cache; each result reports its cache state and the matched cached query, which you must check for relevance. max_results is 1..5 per query; omit it for the default 3. Snippets normally suffice: repeat a search only when evidence is missing or conflicting. Never send DB rows, private context, secrets or full business questions. Returns cited untrusted snippets, not verified answers; cached snippets are equally unverified. Paid external transmission on cache misses. Use EU resolver for supported EU facts."""
             return public_search.search(public_queries, max_results)
 
     if args.source_bookmarks:

@@ -1,0 +1,15 @@
+{
+  "frozen_at": "2026-11-14",
+  "dataset": "synthetic demo (3 rows); functional demo only, not the original benchmark",
+  "prompt_suffix": "Use the available tools for business definitions, live data and any external fact. Give the numeric answer and cite the source for each external fact.",
+  "questions": [
+    {"id": "eu_avg_adjusted_bounce", "kind": "eu", "text": "What is the average adjusted_bounce across sessions from countries that are current EU member states?"},
+    {"id": "eu_session_counts", "kind": "eu", "text": "How many sessions come from current EU member states, and how many from non-member countries?"},
+    {"id": "eu_global_ranking", "kind": "eu", "text": "For each session from a current EU member state, report its bounce_percentile as defined in the metric catalog."},
+    {"id": "non_eu_max_ctr", "kind": "eu", "text": "What is the highest ctr among sessions from countries that are not current EU member states, and which country is it?"},
+    {"id": "eu_share_adjusted_bounce", "kind": "eu", "text": "What percentage of the total adjusted_bounce across all sessions comes from current EU member states?"},
+    {"id": "eu_top_percentile", "kind": "eu", "text": "Which session from a current EU member state has the highest bounce_percentile, and what is the value?"},
+    {"id": "euro_currency_avg_ctr", "kind": "non_eu_web", "text": "What is the average ctr across sessions from countries whose official currency is currently the euro?"},
+    {"id": "g7_total_bounce", "kind": "non_eu_web", "text": "What is the sum of bounce across sessions from countries that are current members of the G7?"}
+  ]
+}

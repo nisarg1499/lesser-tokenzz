@@ -2,8 +2,8 @@
 
 The EU resolver is deliberately narrow. An agent can now use a separate,
 opt-in public search tool when it needs another external fact, such as a country's
-currency. This does not replace the reviewed EU bookmarks, expand their predicate,
-or automatically cache general search results.
+currency. This does not replace the reviewed EU bookmarks or expand their predicate.
+By default nothing is cached; an opt-in snippet cache is described below.
 
 ## Query path
 
@@ -50,6 +50,56 @@ Missing batch attribution is discarded, not guessed.
 - One request has a 20-second timeout and a 256 KiB response cap, with no retries.
   Costs remain unknown until billing is reconciled. Batch latency is shared;
   there is no invented per-query timing or zero-cost assumption.
+
+## Opt-in search snippet cache
+
+`--search-cache DIRECTORY` (requires `--web-fallback`) stores each query group that
+returned evidence and reuses it for at most 24 hours. Later sessions asking the same
+public fact get the stored snippets without a Telem request; only cache misses are
+sent, still as one batch. Without the flag every call remains a live request.
+
+- This caches **untrusted snippets, not answers** and not database results. A hit
+  is exactly as unverified as the original search: `answer_verified` stays false.
+- Matching compares normalized keywords (lowercase, no stop words, `site:` filters
+  or years, light plural folding). A hit needs equal keyword sets, or one set
+  containing the other with at least three shared keywords and 60% coverage.
+  Replacing one entity with another is always a miss. This is not semantic
+  retrieval; differently worded queries for the same fact can miss, and a broader
+  cached query can be served for a narrower one. Each hit therefore returns
+  `matched_query`, `similarity`, `cached_at`, `age_s` and `expires_at` so the agent
+  can reject an irrelevant match.
+- Expired, future-dated, corrupt or too-small entries are misses. Unresolved
+  queries are never stored. Original `retrieved_at` timestamps and source URLs are
+  kept, with a SHA-256 of each stored snippet. Writes are atomic per entry.
+- A hit can serve a snippet up to 24 hours old; facts that changed since then are
+  not detected. There is no monitor integration for this cache.
+- The response adds `cache_hits` and `telem_request_count`. `cost_usd` stays
+  unknown: a hit sends no request, but earlier charges are not reconciled.
+- Do not place the cache directory in version control.
+
+The tool description now asks the agent to read the data's entities first, send
+all needed facts in one call, and use short entity-first phrasing. That guidance
+is what makes repeated questions produce matching queries; it is a prompt, not a
+guarantee.
+
+### Live check (synthetic three-row demo data, November 14, 2026)
+
+One `gpt-6.1-sol` medium session per row, shell and native search disabled in the
+evidence arm. Single runs; timing is noisy and this is not a benchmark.
+
+| Run (euro-currency question) | Total time | Input tokens | Uncached input | Search calls | Cache hits | Telem requests |
+|---|---:|---:|---:|---:|---:|---:|
+| Evidence arm, cold cache | 22.9 s | 77,338 | 8,474 | 1 | 0/3 | 1 |
+| Evidence arm, same question again | 19.4 s | 78,659 | 7,491 | 1 | 3/3 | 0 |
+| Native web baseline, same settings | 21.0 s | 105,672 | 14,792 | 1 native | n/a | n/a |
+
+All three answers matched the reference (15.0). The warm run avoided the provider
+request and was 3.5 s faster in this single pair; model reasoning time dominates
+and is not reduced by the cache. An earlier run of the same question before these
+changes, with different session settings, took 36.3 s with three separate search
+calls and two native page opens, and one intermediate run lost a call to an
+out-of-range `max_results`; those are retained in `runs/interactive/`. A different
+question (G7 membership) asked afterwards was a full miss, as expected.
 
 ## Verification
 
